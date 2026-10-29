@@ -41,14 +41,25 @@ const code = await new Promise((r) => child.on('close', r))
 clearTimeout(killTimer)
 await mock.close()
 
+// In GitHub Actions, also surface failures as annotations (readable via the checks API).
+function annotate(title, text) {
+  if (!process.env.GITHUB_ACTIONS) return
+  const esc = (s) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+  const chunks = []
+  for (let i = 0; i < text.length && chunks.length < 9; i += 3500) chunks.push(text.slice(i, i + 3500))
+  chunks.forEach((c, i) => console.log(`::error title=${title} (${i + 1}/${chunks.length})::${esc(c)}`))
+}
+
 if (!existsSync(report)) {
   console.error(`DSH exited (${code}) without a probe report. Output:\n${output}`)
+  annotate(`dsh exited ${code} without report`, output.slice(-30000) || '(no output)')
   process.exit(1)
 }
 const result = JSON.parse(readFileSync(report, 'utf8'))
 console.log(JSON.stringify(result, null, 2))
 if (!result.ok) {
   console.error(`\nE2E FAILED. DSH output:\n${output}`)
+  annotate('e2e report', JSON.stringify(result, null, 1).slice(0, 14000) + '\n--- dsh output tail ---\n' + output.slice(-14000))
   process.exit(1)
 }
 console.log('\nE2E OK: plugin loaded in DSH and all tools passed through the real tool pipeline.')

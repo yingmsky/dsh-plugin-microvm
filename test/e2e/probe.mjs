@@ -49,12 +49,26 @@ export function apply(ctx, config) {
     return outcome
   }
 
+  // DSH main passes model arguments as a raw JSON string; the 0.2.2 npm release
+  // expects an already-parsed object. Try the string form, fall back to the object.
+  let argForm = 'string'
+  async function exec(id, name, args, ms) {
+    const run = (form) => ctx.tools.execute({
+      calls: [{ type: 'tool-call', id, name, arguments: form === 'string' ? JSON.stringify(args) : args }],
+      signal: AbortSignal.timeout(ms),
+    })
+    let res = await run(argForm)
+    if (argForm === 'string' && res?.isError && /losslessly JSON/.test(res.error?.message ?? '')) {
+      argForm = 'object'
+      res = await run(argForm)
+    }
+    report.argForm = argForm
+    return res
+  }
+
   let n = 0
   async function call(name, args) {
-    const res = await ctx.tools.execute({
-      calls: [{ type: 'tool-call', id: `e2e-${++n}`, name, arguments: JSON.stringify(args) }],
-      signal: AbortSignal.timeout(60_000),
-    })
+    const res = await exec(`e2e-${++n}`, name, args, 60_000)
     const outcome = firstOutcome(res)
     const text = (outcome.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')
     report.steps.push({ name, args, isError: outcome.isError, text, value: outcome.value ?? null })
@@ -79,10 +93,7 @@ export function apply(ctx, config) {
     const ls = await call('microvm_list', {})
     if (ls.length !== 3) throw new Error(`expected 3 sandboxes, got ${ls.length}`)
     // invalid args must be rejected by DSH's validator before the tool runs
-    const bad = await ctx.tools.execute({
-      calls: [{ type: 'tool-call', id: 'e2e-bad', name: 'microvm_exec', arguments: JSON.stringify({ sandboxId: sb.sandboxId }) }],
-      signal: AbortSignal.timeout(10_000),
-    })
+    const bad = await exec('e2e-bad', 'microvm_exec', { sandboxId: sb.sandboxId }, 10_000)
     const badOutcome = firstOutcome(bad)
     report.steps.push({ name: 'microvm_exec (missing command)', isError: badOutcome.isError })
     if (!badOutcome.isError) throw new Error('missing required arg was not rejected')

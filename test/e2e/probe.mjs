@@ -26,14 +26,28 @@ export function apply(ctx, config) {
     setTimeout(() => process.exit(code), 50)
   }
 
+  // ToolBatchResult is { results: [{ callId, result }] } on DSH main; tolerate other
+  // release shapes, and record the raw shape when it is unrecognised.
+  function firstOutcome(res) {
+    const list = Array.isArray(res) ? res : res?.results ?? res?.outcomes ?? res?.calls
+    const first = Array.isArray(list) ? list[0] : undefined
+    const outcome = first?.result ?? first?.outcome ?? first
+    if (!outcome || typeof outcome.isError !== 'boolean') {
+      const shape = (v, d = 0) => v === null || typeof v !== 'object' || d > 3 ? typeof v
+        : Array.isArray(v) ? [v.length ? shape(v[0], d + 1) : 'empty'] : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x, d + 1)]))
+      report.rawShape = shape(res)
+      throw new Error(`unrecognised ctx.tools.execute result: ${JSON.stringify(report.rawShape)}`)
+    }
+    return outcome
+  }
+
   let n = 0
   async function call(name, args) {
     const res = await ctx.tools.execute({
       calls: [{ type: 'tool-call', id: `e2e-${++n}`, name, arguments: JSON.stringify(args) }],
       signal: AbortSignal.timeout(60_000),
     })
-    const r = res.results[0]
-    const outcome = r.result ?? r
+    const outcome = firstOutcome(res)
     const text = (outcome.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')
     report.steps.push({ name, args, isError: outcome.isError, text, value: outcome.value ?? null })
     if (outcome.isError) throw new Error(`${name} failed: ${text}`)
@@ -61,7 +75,7 @@ export function apply(ctx, config) {
       calls: [{ type: 'tool-call', id: 'e2e-bad', name: 'microvm_exec', arguments: JSON.stringify({ sandboxId: sb.sandboxId }) }],
       signal: AbortSignal.timeout(10_000),
     })
-    const badOutcome = bad.results[0].result ?? bad.results[0]
+    const badOutcome = firstOutcome(bad)
     report.steps.push({ name: 'microvm_exec (missing command)', isError: badOutcome.isError })
     if (!badOutcome.isError) throw new Error('missing required arg was not rejected')
     for (const s of ls) await call('microvm_destroy', { sandboxId: s.sandboxId })

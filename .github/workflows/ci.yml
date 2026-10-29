@@ -27,8 +27,6 @@ jobs:
   e2e-dsh:
     name: e2e in a real DeepSeek Harness
     runs-on: ubuntu-latest
-    env:
-      DSH_HOME: ${{ runner.temp }}/dsh-home
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,7 +36,9 @@ jobs:
         with:
           version: 10
       - name: Install dsh
-        run: npm install -g @deepseek-ai/dsh && dsh --version
+        run: |
+          echo "DSH_HOME=$RUNNER_TEMP/dsh-home" >> "$GITHUB_ENV"
+          npm install -g @deepseek-ai/dsh && dsh --version
       - name: Install this checkout as a plugin
         run: dsh plugin --profile microvm-e2e add "$GITHUB_WORKSPACE"
       - name: Bundle layer is composed
@@ -51,8 +51,6 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: e2e-dsh
     runs-on: ubuntu-latest
-    env:
-      DSH_HOME: ${{ runner.temp }}/dsh-home
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -60,7 +58,10 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - run: npm install -g @deepseek-ai/dsh
+      - name: Install dsh
+        run: |
+          echo "DSH_HOME=$RUNNER_TEMP/dsh-home" >> "$GITHUB_ENV"
+          npm install -g @deepseek-ai/dsh
       - name: dsh plugin add github:${{ github.repository }}#${{ github.sha }}
         run: dsh plugin --profile gh add "github:${{ github.repository }}#${{ github.sha }}"
       - run: dsh --profile gh --dump-config | grep -n "dsh-plugin-microvm"

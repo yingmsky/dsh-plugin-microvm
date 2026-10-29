@@ -29,6 +29,14 @@ export function apply(ctx, config) {
   // ToolBatchResult is { results: [{ callId, result }] } on DSH main; tolerate other
   // release shapes, and record the raw shape when it is unrecognised.
   function firstOutcome(res) {
+    if (res && typeof res.isError === 'boolean' && !res.results) {
+      // Batch-level outcome (e.g. the executor refused the whole batch).
+      if (res.isError) {
+        report.batchError = { error: res.error, content: res.content }
+        throw new Error(`batch rejected: ${res.error?.message ?? ''} ${(res.content ?? []).map((b) => b.text).join(' ')}`)
+      }
+      return res
+    }
     const list = Array.isArray(res) ? res : res?.results ?? res?.outcomes ?? res?.calls
     const first = Array.isArray(list) ? list[0] : undefined
     const outcome = first?.result ?? first?.outcome ?? first

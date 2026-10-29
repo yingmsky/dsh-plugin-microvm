@@ -1,0 +1,11 @@
+# Layer applied when a profile lists this bundle (dsh plugin add ...).
+# Override any of these in your profile's cordis.patch.yml; a row's config is
+# replaced as a whole, so restate every key you need there.
+- insert:
+    - id: microvm
+      name: dsh-plugin-microvm
+      config:
+        # Empty apiKey/apiUrl fall back to E2B_API_KEY / E2B_API_URL (else https://api.e2b.app).
+        template: base
+        sandboxTimeoutSec: 600
+        maxSandboxesPerAgent: 4

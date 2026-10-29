@@ -1,0 +1,52 @@
+{
+  "name": "dsh-plugin-microvm",
+  "version": "0.1.0",
+  "description": "Disposable microVM sandbox tools for DeepSeek Harness, backed by any E2B-compatible API (E2B, AgentENV)",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "e2b",
+    "agentenv",
+    "firecracker",
+    "microvm",
+    "sandbox",
+    "agent"
+  ],
+  "license": "MIT",
+  "author": "yingmsky",
+  "homepage": "https://github.com/yingmsky/dsh-plugin-microvm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yingmsky/dsh-plugin-microvm.git"
+  },
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-0 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

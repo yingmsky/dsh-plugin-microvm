@@ -109,14 +109,14 @@ Wire details follow the E2B JS SDK and `spec/envd/*.proto` in [e2b-dev/E2B](http
 ```sh
 npm test                                   # 21 tests against a mock E2B server whose envd really runs bash
 dsh plugin --profile dev add "$PWD"         # link the checkout into a profile
-node test/e2e/run.mjs dev                   # boot real DSH, drive every tool through its pipeline
+node test/e2e/run.mjs dev                   # boot real DSH, drive every registered tool
 ```
 
-CI runs the unit tests on Node 22 and 24, then boots a real `@deepseek-ai/dsh` with the plugin installed. A probe plugin there calls the tools through `ctx.tools.execute`, so DSH's own argument validation, output-schema validation and rendering are exercised.
+CI runs the unit tests on Node 22 and 24, then boots a real `@deepseek-ai/dsh` with the plugin installed. A probe plugin there calls the tool definitions DSH built, so DSH's own argument validation runs, and each result is checked against the compiled output schema and renderer. CI also installs the plugin via `dsh plugin add github:…`.
 
 ## Status
 
-v0.1, against DSH `0.2.x` (developer preview, which warns of breaking changes). Verified against the mock E2B server and the real DSH tool pipeline. Not yet run against live E2B or AgentENV: reports welcome. The envd routing of self-hosted AgentENV in particular may need a different `envdUrl`.
+v0.1, against DSH `0.2.x` (developer preview, which warns of breaking changes). Verified in CI on DSH 0.2.2 (installed from npm and from GitHub) against a mock E2B server. Not yet run against live E2B or AgentENV: reports welcome. The envd routing of self-hosted AgentENV in particular may need a different `envdUrl`.
 
 ## License
 

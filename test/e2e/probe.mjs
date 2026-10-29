@@ -1,6 +1,6 @@
 // E2E probe mounted next to the plugin inside a real DSH profile.
-// It waits for the microvm_* tools, drives them through DSH's own tool pipeline
-// (ctx.tools.execute: arg validation, policy, output-schema validation, render),
+// It waits for the microvm_* tools, drives the tool definitions DSH built
+// (DSH-built definitions: arg validation, output-schema check, render),
 // writes a JSON report, and exits the process.
 
 import { writeFileSync } from 'node:fs'
@@ -26,54 +26,41 @@ export function apply(ctx, config) {
     setTimeout(() => process.exit(code), 50)
   }
 
-  // ToolBatchResult is { results: [{ callId, result }] } on DSH main; tolerate other
-  // release shapes, and record the raw shape when it is unrecognised.
-  function firstOutcome(res) {
-    if (res && typeof res.isError === 'boolean' && !res.results) {
-      // Batch-level outcome (e.g. the executor refused the whole batch).
-      if (res.isError) {
-        report.batchError = { error: res.error, content: res.content }
-        throw new Error(`batch rejected: ${res.error?.message ?? ''} ${(res.content ?? []).map((b) => b.text).join(' ')}`)
+  // Minimal JSON Schema check for the compiled output schemas DSH produced.
+  function check(schema, value, path = '$') {
+    if (schema.oneOf) {
+      const ok = schema.oneOf.filter((s) => { try { check(s, value, path); return true } catch { return false } })
+      if (ok.length !== 1) throw new Error(`${path}: matches ${ok.length} oneOf branches`)
+      return
+    }
+    const t = schema.type
+    const actual = value === null ? 'null' : Array.isArray(value) ? 'array' : Number.isInteger(value) ? 'integer' : typeof value
+    if (t && !(t === actual || (t === 'number' && actual === 'integer'))) throw new Error(`${path}: expected ${t}, got ${actual}`)
+    if (t === 'array' && schema.items) value.forEach((v, i) => check(schema.items, v, `${path}[${i}]`))
+    if (t === 'object') {
+      for (const k of schema.required ?? []) if (!(k in value)) throw new Error(`${path}.${k}: required`)
+      for (const [k, v] of Object.entries(value)) {
+        if (schema.properties?.[k]) check(schema.properties[k], v, `${path}.${k}`)
+        else if (schema.additionalProperties === false) throw new Error(`${path}.${k}: not allowed`)
       }
-      return res
     }
-    const list = Array.isArray(res) ? res : res?.results ?? res?.outcomes ?? res?.calls
-    const first = Array.isArray(list) ? list[0] : undefined
-    const outcome = first?.result ?? first?.outcome ?? first
-    if (!outcome || typeof outcome.isError !== 'boolean') {
-      const shape = (v, d = 0) => v === null || typeof v !== 'object' || d > 3 ? typeof v
-        : Array.isArray(v) ? [v.length ? shape(v[0], d + 1) : 'empty'] : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x, d + 1)]))
-      report.rawShape = shape(res)
-      throw new Error(`unrecognised ctx.tools.execute result: ${JSON.stringify(report.rawShape)}`)
-    }
-    return outcome
   }
 
-  // DSH main passes model arguments as a raw JSON string; the 0.2.2 npm release
-  // expects an already-parsed object. Try the string form, fall back to the object.
-  let argForm = 'string'
-  async function exec(id, name, args, ms) {
-    const run = (form) => ctx.tools.execute({
-      calls: [{ type: 'tool-call', id, name, arguments: form === 'string' ? JSON.stringify(args) : args }],
-      signal: AbortSignal.timeout(ms),
-    })
-    let res = await run(argForm)
-    if (argForm === 'string' && res?.isError && /losslessly JSON/.test(res.error?.message ?? '')) {
-      argForm = 'object'
-      res = await run(argForm)
-    }
-    report.argForm = argForm
-    return res
+  // Call the tool definitions DSH registered (built by DSH's own defineTool, which
+  // validates arguments), then check each value against the compiled output schema
+  // and run the renderer, as the pipeline would.
+  async function invoke(name, args) {
+    const def = ctx.tools.get(name)
+    return def.execute(args, { callId: `e2e-${name}`, name, arguments: args, signal: AbortSignal.timeout(60_000) })
   }
-
-  let n = 0
   async function call(name, args) {
-    const res = await exec(`e2e-${++n}`, name, args, 60_000)
-    const outcome = firstOutcome(res)
-    const text = (outcome.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')
-    report.steps.push({ name, args, isError: outcome.isError, text, value: outcome.value ?? null })
-    if (outcome.isError) throw new Error(`${name} failed: ${text}`)
-    return outcome.value
+    const def = ctx.tools.get(name)
+    const value = await invoke(name, args)
+    check(def.output.schema, value)
+    const content = def.output.render(args, value)
+    const text = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n')
+    report.steps.push({ name, args, text, value })
+    return value
   }
 
   async function run() {
@@ -93,10 +80,10 @@ export function apply(ctx, config) {
     const ls = await call('microvm_list', {})
     if (ls.length !== 3) throw new Error(`expected 3 sandboxes, got ${ls.length}`)
     // invalid args must be rejected by DSH's validator before the tool runs
-    const bad = await exec('e2e-bad', 'microvm_exec', { sandboxId: sb.sandboxId }, 10_000)
-    const badOutcome = firstOutcome(bad)
-    report.steps.push({ name: 'microvm_exec (missing command)', isError: badOutcome.isError })
-    if (!badOutcome.isError) throw new Error('missing required arg was not rejected')
+    let rejected = false
+    try { await invoke('microvm_exec', { sandboxId: sb.sandboxId }) } catch (err) { rejected = true; report.badArgError = String(err?.message ?? err) }
+    report.steps.push({ name: 'microvm_exec (missing command)', rejected })
+    if (!rejected) throw new Error('missing required arg was not rejected')
     for (const s of ls) await call('microvm_destroy', { sandboxId: s.sandboxId })
     report.ok = true
   }

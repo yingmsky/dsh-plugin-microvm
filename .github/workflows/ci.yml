@@ -43,14 +43,7 @@ jobs:
         run: dsh plugin --profile microvm-e2e add "$GITHUB_WORKSPACE"
       - name: Bundle layer is composed
         run: dsh --profile microvm-e2e --dump-config | tee config.txt | grep -n "dsh-plugin-microvm"
-      - name: Record installed tool-call shape (debug)
-        if: always()
-        run: |
-          F=$(find "$(npm root -g)/@deepseek-ai" -path '*dsh-tools/lib/*.js' 2>/dev/null | head -50)
-          V=$(node -p "require('$(npm root -g)/@deepseek-ai/dsh/package.json').version")
-          HITS=$(grep -ho "parseArguments([^)]*)\|arguments: [a-zA-Z_.]*\(block\|call\)[a-zA-Z_.]*" $F 2>/dev/null | sort | uniq -c | head -10 | tr '\n' ';')
-          echo "::notice title=dsh $V tool-call shape::$HITS"
-      - name: Boot DSH and drive the tools through its pipeline
+      - name: Boot DSH and drive the registered tools
         run: node test/e2e/run.mjs microvm-e2e
 
   install-from-github:
